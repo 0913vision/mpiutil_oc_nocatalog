@@ -123,6 +123,8 @@ int main(int argc, char** argv)
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+    double starttime = MPI_Wtime();
+
     /* pointer to mfu_file src and dest objects */
     mfu_file_t* mfu_src_file = mfu_file_new();
     mfu_file_t* mfu_dst_file = mfu_file_new();
@@ -596,6 +598,16 @@ daos_cleanup:
         }
     }
 
+    double endtime = MPI_Wtime();
+    int size;
+
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    double fastest_start;
+    double latest_end;
+    MPI_Reduce(&starttime, &fastest_start, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&endtime, &latest_end, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
     double total_time = timing_info.total_time;
     double sum_time;
     MPI_Reduce(&total_time, &sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
@@ -609,9 +621,10 @@ daos_cleanup:
     MPI_Reduce(&md_total_time, &md_sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
-        printf("Total io time: %f seconds", sum_time);
-        printf("Total pread time: %f seconds", pread_sum_time);
-        printf("Total metadata time: %f seconds", md_sum_time);
+        printf("longest time: %f seconds", latest_end - fastest_start);
+        printf("Avg io time: %f seconds", sum_time/size);
+        printf("Avg pread time: %f seconds", pread_sum_time/size);
+        printf("Avg metadata time: %f seconds", md_sum_time/size);
     }
 
     mfu_finalize();
