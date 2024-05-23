@@ -596,8 +596,18 @@ daos_cleanup:
         }
     }
 
-    MFU_LOG(MFU_LOG_INFO, "timing_info.total_time: %f", timing_info.total_time);
-    MFU_LOG(MFU_LOG_INFO, "pread_timing_info.total_time: %f", pread_timing_info.total_time);
+    double total_time = timing_info.total_time;
+    double sum_time;
+    MPI_Reduce(&total_time, &sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    double pread_total_time = pread_timing_info.total_time;
+    double preaD_sum_time;
+    MPI_Reduce(&pread_total_time, &pread_sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Total time: %f seconds", sum_time);
+        MFU_LOG(MFU_LOG_INFO, "Total pread time: %f seconds", pread_sum_time);
+    }
 
     mfu_finalize();
 
