@@ -1071,7 +1071,7 @@ ssize_t mfu_pread(const char* file, int fd, void* buf, size_t size, off_t offset
         if (rc > 0) {
             /* read some data */
             double end = MPI_Wtime();
-            record_timing(start, end);
+            pread_record_timing(start, end);
             return rc;
         }
         else if (rc == 0) {
