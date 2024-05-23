@@ -57,7 +57,7 @@ retry:
         }
     }
     double end = MPI_Wtime();
-    record_timing(start, end);
+    md_record_timing(start, end);
     return rc;
 }
 
@@ -106,7 +106,7 @@ retry:
         }
     }
     double end = MPI_Wtime();
-    record_timing(start, end);
+    md_record_timing(start, end);
     return rc;
 }
 
@@ -310,7 +310,7 @@ retry:
         }
     }
     double end = MPI_Wtime();
-    record_timing(start, end);
+    md_record_timing(start, end);
     return rc;
 }
 
@@ -358,7 +358,7 @@ retry:
         }
     }
     double end = MPI_Wtime();
-    record_timing(start, end);
+    md_record_timing(start, end);
     return rc;
 }
 
@@ -1487,7 +1487,7 @@ retry:
         }
     }
     double end = MPI_Wtime();
-    record_timing(start, end);
+    md_record_timing(start, end);
     return dirp;
 }
 
@@ -1631,7 +1631,7 @@ ssize_t mfu_llistxattr(const char* path, char* list, size_t size)
     double start = MPI_Wtime();
     ssize_t rc = llistxattr(path, list, size);
     double end = MPI_Wtime();
-    record_timing(start, end);
+    md_record_timing(start, end);
     return rc;
 }
 
@@ -1670,7 +1670,7 @@ ssize_t mfu_listxattr(const char* path, char* list, size_t size)
     double start = MPI_Wtime();
     ssize_t rc = listxattr(path, list, size);
     double end = MPI_Wtime();
-    record_timing(start, end);
+    md_record_timing(start, end);
     return rc;
 }
 
@@ -1709,7 +1709,7 @@ ssize_t mfu_lgetxattr(const char* path, const char* name, void* value, size_t si
     double start = MPI_Wtime();
     ssize_t rc = lgetxattr(path, name, value, size);
     double end = MPI_Wtime();
-    record_timing(start, end);
+    md_record_timing(start, end);
     return rc;
 }
 
@@ -1748,7 +1748,7 @@ ssize_t mfu_getxattr(const char* path, const char* name, void* value, size_t siz
     double start = MPI_Wtime();
     ssize_t rc = getxattr(path, name, value, size);
     double end = MPI_Wtime();
-    record_timing(start, end);
+    md_record_timing(start, end);
     return rc;
 }
 
@@ -1788,7 +1788,7 @@ int mfu_lsetxattr(const char* path, const char* name, const void* value, size_t 
     double start = MPI_Wtime();
     int rc = lsetxattr(path, name, value, size, flags);
     double end = MPI_Wtime();
-    record_timing(start, end);
+    md_record_timing(start, end);
     return rc;
 }
 

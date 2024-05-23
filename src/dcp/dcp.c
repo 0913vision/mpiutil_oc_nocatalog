@@ -601,12 +601,17 @@ daos_cleanup:
     MPI_Reduce(&total_time, &sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     double pread_total_time = pread_timing_info.total_time;
-    double preaD_sum_time;
+    double pread_sum_time;
     MPI_Reduce(&pread_total_time, &pread_sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
+    double md_total_time = md_timing_info.total_time;
+    double md_sum_time;
+    MPI_Reduce(&md_total_time, &md_sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
     if (rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Total time: %f seconds", sum_time);
+        MFU_LOG(MFU_LOG_INFO, "Total io time: %f seconds", sum_time);
         MFU_LOG(MFU_LOG_INFO, "Total pread time: %f seconds", pread_sum_time);
+        MFU_LOG(MFU_LOG_INFO, "Total metadata time: %f seconds", md_sum_time);
     }
 
     mfu_finalize();
