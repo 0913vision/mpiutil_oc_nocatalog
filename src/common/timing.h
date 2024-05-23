@@ -12,5 +12,6 @@ extern timing_info_t md_timing_info
 
 void record_timing(double start, double end);
 void pread_record_timing(double start, double end);
+void md_record_timing(double start, double end);
 
 #endif // TIMING_H
