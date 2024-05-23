@@ -583,7 +583,6 @@ int main(int argc, \
 
     /* force updates to disk */
     if (DCOPY_global_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Hello World!");
         MFU_LOG(MFU_LOG_INFO, "Syncing updates to disk.");
     }
     sync();
