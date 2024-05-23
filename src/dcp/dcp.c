@@ -19,6 +19,8 @@
 
 #include "mfu_errors.h"
 
+#include "timing.h"
+
 static int input_flist_skip(const char* name, void *args)
 {
     /* nothing to do if args are NULL */
@@ -593,6 +595,9 @@ daos_cleanup:
                     MFU_ERRF, MFU_ERRP(-MFU_ERR_DCP_COPY));
         }
     }
+
+    MFU_LOG(MFU_LOG_INFO, "timing_info.total_time: %f", timing_info.total_time);
+    MFU_LOG(MFU_LOG_INFO, "pread_timing_info.total_time: %f", pread_timing_info.total_time);
 
     mfu_finalize();
 
