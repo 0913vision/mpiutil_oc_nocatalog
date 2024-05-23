@@ -621,10 +621,10 @@ daos_cleanup:
     MPI_Reduce(&md_total_time, &md_sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
-        printf("longest time: %f seconds", latest_end - fastest_start);
-        printf("Avg io time: %f seconds", sum_time/size);
-        printf("Avg pread time: %f seconds", pread_sum_time/size);
-        printf("Avg metadata time: %f seconds", md_sum_time/size);
+        printf("[LOG] longest time: %f seconds\n", latest_end - fastest_start);
+        printf("[LOG] Avg io time: %f seconds\n", sum_time/size);
+        printf("[LOG] Avg pread time: %f seconds\n", pread_sum_time/size);
+        printf("[LOG] Avg metadata time: %f seconds\n", md_sum_time/size);
     }
 
     mfu_finalize();
