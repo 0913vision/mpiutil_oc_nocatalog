@@ -8,7 +8,7 @@ typedef struct {
 
 extern timing_info_t timing_info;
 extern timing_info_t pread_timing_info;
-extern timing_info_t md_timing_info
+extern timing_info_t md_timing_info;
 
 void record_timing(double start, double end);
 void pread_record_timing(double start, double end);
