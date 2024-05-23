@@ -609,9 +609,9 @@ daos_cleanup:
     MPI_Reduce(&md_total_time, &md_sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Total io time: %f seconds", sum_time);
-        MFU_LOG(MFU_LOG_INFO, "Total pread time: %f seconds", pread_sum_time);
-        MFU_LOG(MFU_LOG_INFO, "Total metadata time: %f seconds", md_sum_time);
+        printf("Total io time: %f seconds", sum_time);
+        printf("Total pread time: %f seconds", pread_sum_time);
+        printf("Total metadata time: %f seconds", md_sum_time);
     }
 
     mfu_finalize();
