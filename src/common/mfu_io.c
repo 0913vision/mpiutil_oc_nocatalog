@@ -396,7 +396,7 @@ retry:
         }
     }
     double end = MPI_Wtime();
-    record_timing(start, end);
+    md_record_timing(start, end);
     return rc;
 }
 
