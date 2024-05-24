@@ -607,11 +607,6 @@ daos_cleanup:
 
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    double fastest_start;
-    double latest_end;
-    MPI_Reduce(&starttime, &fastest_start, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
-    MPI_Reduce(&endtime, &latest_end, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-
     double total_time = timing_info.total_time;
     double sum_time;
     MPI_Reduce(&total_time, &sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
@@ -625,7 +620,7 @@ daos_cleanup:
     MPI_Reduce(&md_total_time, &md_sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
-        printf("check: longest time: %f seconds\n", latest_end - fastest_start);
+        printf("check: exec time: %f seconds\n", endtime - starttime);
         printf("check: Avg io time: %f seconds\n", sum_time/size);
         printf("check: Avg pread time: %f seconds\n", pread_sum_time/size);
         printf("check: Avg metadata time: %f seconds\n", md_sum_time/size);
