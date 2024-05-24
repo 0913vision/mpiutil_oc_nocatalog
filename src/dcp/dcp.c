@@ -124,7 +124,7 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     if (rank == 0) {
-       printf("Starting dcp");
+       printf("check: Starting dcp");
     }
 
     double starttime = MPI_Wtime();
@@ -625,10 +625,10 @@ daos_cleanup:
     MPI_Reduce(&md_total_time, &md_sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
-        printf("[LOG] longest time: %f seconds\n", latest_end - fastest_start);
-        printf("[LOG] Avg io time: %f seconds\n", sum_time/size);
-        printf("[LOG] Avg pread time: %f seconds\n", pread_sum_time/size);
-        printf("[LOG] Avg metadata time: %f seconds\n", md_sum_time/size);
+        printf("check: longest time: %f seconds\n", latest_end - fastest_start);
+        printf("check: Avg io time: %f seconds\n", sum_time/size);
+        printf("check: Avg pread time: %f seconds\n", pread_sum_time/size);
+        printf("check: Avg metadata time: %f seconds\n", md_sum_time/size);
     }
 
     mfu_finalize();
