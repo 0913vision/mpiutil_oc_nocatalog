@@ -615,15 +615,25 @@ daos_cleanup:
     double pread_sum_time;
     MPI_Reduce(&pread_total_time, &pread_sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
+    double pread_count = pread_timing_info.count;
+    double sum_pread_count;
+    MPI_Reduce(&pread_count, &sum_pread_count, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
     double md_total_time = md_timing_info.total_time;
     double md_sum_time;
     MPI_Reduce(&md_total_time, &md_sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    double md_count = md_timing_info.count;
+    double sum_md_count;
+    MPI_Reduce(&md_count, &sum_md_count, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
         printf("check: exec time: %f seconds\n", endtime - starttime);
         printf("check: Avg io time: %f seconds\n", sum_time/size);
         printf("check: Avg pread time: %f seconds\n", pread_sum_time/size);
+        printf("check: total pread count: %f\n", sum_pread_count);
         printf("check: Avg metadata time: %f seconds\n", md_sum_time/size);
+        printf("check: total metadata count: %f\n", sum_md_count);
     }
 
     mfu_finalize();
