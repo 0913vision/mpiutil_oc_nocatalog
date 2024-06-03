@@ -8,6 +8,8 @@
 #include "dtcmp.h"
 #include "mfu.h"
 
+#include "timing.h"
+
 uint64_t num_tasks_per_ost[OST_NUMBER];
 
 /****************************************
