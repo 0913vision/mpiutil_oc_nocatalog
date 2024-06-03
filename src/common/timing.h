@@ -9,9 +9,11 @@ typedef struct {
 extern timing_info_t timing_info;
 extern timing_info_t pread_timing_info;
 extern timing_info_t md_timing_info;
+extern timing_info_t llapi_timing_info;
 
 void record_timing(double start, double end);
 void pread_record_timing(double start, double end);
 void md_record_timing(double start, double end);
+void llapi_record_timing(double start, double end, timing_info_t *timing_info);
 
 #endif // TIMING_H

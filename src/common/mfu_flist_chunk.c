@@ -1,12 +1,14 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <unistd.h>
-
+#include <stdlib.h>
 #include <string.h>
 
 #include "libcircle.h"
 #include "dtcmp.h"
 #include "mfu.h"
+
+uint64_t num_tasks_per_ost[OST_NUMBER];
 
 /****************************************
  * Functions to divide flist into linked list of file sections
@@ -32,6 +34,7 @@ static int map_chunk_to_rank(uint64_t offset, uint64_t cutoff, uint64_t chunks_p
     return rank;
 }
 
+
 /* This is a long routine, but the idea is simple.  All tasks sum up
  * the number of file chunks they have, and those are then evenly
  * distributed amongst the processes.  */
@@ -41,6 +44,16 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size)
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+	
+    mfu_file_chunk* head = NULL;
+    mfu_file_chunk* tail = NULL;
+
+    int rc[5];
+    uint64_t cnt = 0, ssize, start, end, ost_idx, interval, file_size;
+    int worker_number = ranks;
+    int obj_idx = 0;
+    struct llapi_layout *layout;
+
 
     /* total up number of file chunks for all files in our list */
     uint64_t count = 0;
@@ -59,7 +72,7 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size)
             uint64_t chunks = file_size / chunk_size;
             if (chunks * chunk_size < file_size || file_size == 0) {
                 /* this accounts for the last chunk, which may be
-                 * partial or it adds a chunk for 0-size files */
+ *                  * partial or it adds a chunk for 0-size files */
                 chunks++;
             }
 
@@ -67,10 +80,13 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size)
             count += chunks;
         }
     }
+	printf("rank %d chunks: %d\n", rank, count);
 
     /* compute total number of chunks across procs */
     uint64_t total;
     MPI_Allreduce(&count, &total, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+	printf("total chunks: %d\n", total);
 
     /* get global offset of our first chunk */
     uint64_t offset;
@@ -79,59 +95,18 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size)
         offset = 0;
     }
 
-    /* compute number of chunks per task, ranks below cutoff will
-     * be responsible for (chunks_per_rank+1) and ranks at cutoff
-     * and above are responsible for chunks_per_rank */
-    uint64_t chunks_per_rank = total / (uint64_t) ranks;
-    uint64_t coverage = chunks_per_rank * (uint64_t) ranks;
-    uint64_t cutoff = total - coverage;
-
-    /* TODO: replace this with DSDE */
-
-    /* allocate an array of integers to use in alltoall,
-     * we'll set a flag to 1 if we have data for that rank
-     * and set it to 0 otherwise, then we'll exchange flags
-     * with an alltoall */
-    int* sendlist = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
-    int* recvlist = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
-
-    /* assume we won't send to any ranks,
-     * so initialize all ranks to 0 */
-    int i;
-    for (i = 0; i < ranks; i++) {
-        sendlist[i] = 0;
-    }
-
     /* if we have some chunks, figure out the number of ranks
-     * we'll send to and the range of rank ids, set flags to 1 */
-    int send_ranks = 0;
-    int first_send_rank, last_send_rank;
-    if (count > 0) {
-        /* compute first rank we'll send data to */
-        first_send_rank = map_chunk_to_rank(offset, cutoff, chunks_per_rank);
-
-        /* compute last rank we'll send to */
-        uint64_t last_offset = offset + count - 1;
-        last_send_rank  = map_chunk_to_rank(last_offset, cutoff, chunks_per_rank);
-
-        /* set flag for each process we'll send data to */
-        for (i = first_send_rank; i <= last_send_rank; i++) {
-            sendlist[i] = 1;
-        }
-
-        /* compute total number of destinations we'll send to */
-        send_ranks = last_send_rank - first_send_rank + 1;
-    }
+ *      * we'll send to and the range of rank ids, set flags to 1 */
 
     /* allocate a linked list for each process we'll send to */
-    mfu_file_chunk** heads = (mfu_file_chunk**) MFU_MALLOC((size_t)send_ranks * sizeof(mfu_file_chunk*));
-    mfu_file_chunk** tails = (mfu_file_chunk**) MFU_MALLOC((size_t)send_ranks * sizeof(mfu_file_chunk*));
-    uint64_t* counts  = (uint64_t*)   MFU_MALLOC((size_t)send_ranks * sizeof(uint64_t));
-    uint64_t* bytes   = (uint64_t*)   MFU_MALLOC((size_t)send_ranks * sizeof(uint64_t));
-    char** sendbufs   = (char**)      MFU_MALLOC((size_t)send_ranks * sizeof(char*));
-
+    mfu_file_chunk** heads = (mfu_file_chunk**) MFU_MALLOC((size_t)ranks * sizeof(mfu_file_chunk*));
+    mfu_file_chunk** tails = (mfu_file_chunk**) MFU_MALLOC((size_t)ranks * sizeof(mfu_file_chunk*));
+    uint64_t* counts  = (uint64_t*)   MFU_MALLOC((size_t)ranks * sizeof(uint64_t));
+    uint64_t* bytes   = (uint64_t*)   MFU_MALLOC((size_t)ranks * sizeof(uint64_t));
+    char** sendbufs   = (char**)      MFU_MALLOC((size_t)ranks * sizeof(char*));
+	
     /* initialize values */
-    for (i = 0; i < send_ranks; i++) {
+    for (int i = 0; i < ranks; i++) {
         heads[i]    = NULL;
         tails[i]    = NULL;
         counts[i]   = 0;
@@ -140,162 +115,207 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size)
     }
 
     /* now iterate through files and build up list of chunks we'll
-     * send to each task, as an optimization, we encode consecutive
-     * chunks of the same file into a single unit */
-    uint64_t current_offset = offset;
+ *      * send to each task, as an optimization, we encode consecutive
+ *           * chunks of the same file into a single unit */
+ 
+   uint64_t current_offset = offset;
     for (idx = 0; idx < size; idx++) {
         /* get type of item */
         mfu_filetype type = mfu_flist_file_get_type(list, idx);
+
 
         /* if we have a file, add up its chunks */
         if (type == MFU_TYPE_FILE) {
             /* get size of file */
             uint64_t file_size = mfu_flist_file_get_size(list, idx);
 
-            /* compute number of chunks to copy for this file */
-            uint64_t chunks = file_size / chunk_size;
-            if (chunks * chunk_size < file_size || file_size == 0) {
+	uint64_t chunks = file_size /chunk_size;
+	uint64_t chunk_cnt = 0;
+        if (chunks * chunk_size < file_size || file_size == 0) {
                 chunks++;
             }
+//	printf("rank %d idx %d # of chunks %d\n", rank, idx, chunks);
 
-            /* iterate over each chunk of this file and determine the
-             * rank we should send it to */
-            int prev_rank = MPI_PROC_NULL;
-            uint64_t chunk_id;
-            for (chunk_id = 0; chunk_id < chunks; chunk_id++) {
-                /* determine which rank we should map this chunk to */
-                int current_rank = map_chunk_to_rank(current_offset, cutoff, chunks_per_rank);
-
-                /* compute index into our send_ranks arrays */
-                int rank_index = current_rank - first_send_rank;
-
-                /* if this chunk goes to a rank we've already created
-                 * an element for, just update that element, otherwise
-                 * create a new element */
-                if (current_rank == prev_rank) {
-                    /* we've already got an element started for this
-                     * file and rank, just update its count field to
-                     * append this element */
-                    mfu_file_chunk* elem = tails[rank_index];
-                    elem->length += chunk_size;
-
-                    /* adjusting length in case chunk is a partial chunk */
-                    uint64_t remainder = file_size - elem->offset;
-                    if (remainder < elem->length) {
-                        elem->length = remainder;
-                    }
-                } else {
-                    /* we're sending to a new rank or have the start
-                     * of a new file, either way allocate a new element */
-                    mfu_file_chunk* elem = (mfu_file_chunk*) MFU_MALLOC(sizeof(mfu_file_chunk));
-                    elem->name             = mfu_flist_file_get_name(list, idx);
-                    elem->offset           = chunk_id * chunk_size;
-                    elem->length           = chunk_size;
-                    elem->file_size        = file_size;
-                    elem->rank_of_owner    = rank;
-                    elem->index_of_owner   = idx;
-                    elem->next             = NULL;
-
-                    /* adjusting length in case chunk is a partial chunk */
-                    uint64_t remainder = file_size - elem->offset;
-                    if (remainder < elem->length) {
-                        elem->length = remainder;
-                    }
-
-                    /* compute bytes needed to pack this item,
-                     * full name NUL-terminated, chunk id,
-                     * number of chunks, and file size */
-                    size_t pack_size = strlen(elem->name) + 1;
-                    pack_size += 5 * 8;
-
-                    /* append element to list */
-                    if (heads[rank_index] == NULL) {
-                        heads[rank_index] = elem;
-                    }
-                    if (tails[rank_index] != NULL) {
-                        tails[rank_index]->next = elem;
-                    }
-                    tails[rank_index] = elem;
-                    counts[rank_index]++;
-                    bytes[rank_index] += pack_size;
-
-                    /* remember which rank we're sending to */
-                    prev_rank = current_rank;
-                }
-
-                /* go on to our next chunk */
-                current_offset++;
+            /* get layout information */
+            double start = MPI_Wtime();
+            layout = llapi_layout_get_by_path(mfu_flist_file_get_name(list, idx), 0);
+            double end = MPI_Wtime();
+            llapi_record_timing(start, end, &llapi_timing_info);
+//		printf("name: %s\n", mfu_flist_file_get_name(list, idx), 0); 
+           if (layout == NULL){
+                printf("errno: layout is NULL\n");
             }
-        }
-    }
-
-    /* exchange flags with ranks so everyone knows who they'll
-     * receive data from */
-    MPI_Alltoall(sendlist, 1, MPI_INT, recvlist, 1, MPI_INT, MPI_COMM_WORLD);
-
-    /* determine number of ranks that will send to us */
-    int first_recv_rank = MPI_PROC_NULL;
-    int recv_ranks = 0;
-    for (i = 0; i < ranks; i++) {
-        if (recvlist[i]) {
-            /* record the first rank we'll receive from */
-            if (first_recv_rank == MPI_PROC_NULL) {
-                first_recv_rank = i;
+            rc[0] = llapi_layout_comp_use(layout, 1);
+            if (rc[0]){
+                printf("error: layout component iteration failed\n");
             }
+            while (1){
+                        rc[0] = llapi_layout_stripe_count_get(layout, &cnt);
+                        rc[1] = llapi_layout_stripe_size_get(layout, &ssize);
+                        rc[2] = llapi_layout_comp_extent_get(layout, &start, &end);
+                        if (rc[0] || rc[1] || rc[2]){
+                            printf("error: cannot get stripe information\n");
+                            continue;
+                    	}
+//			printf("cnt %d\n", cnt);
+                    interval = cnt * ssize;
+//			printf("interval %d\n", interval);
+                    end = (end < file_size) ? end : file_size;
+                    for (int i = 0; i < cnt; i++){
+                        rc[0] = llapi_layout_ost_index_get(layout, i, &ost_idx);
+                        if (rc[0]){
+                                goto here_exit;
+                        }
+			int next_offset = 0;
+			for(int j=0; next_offset <=end; j++){
+//			printf("next_offset %d, rank: %d\n", next_offset, rank);
+			int off = (start + i * ssize) + (j*interval);
+//			if(off >= file_size && file_size != 0){
+			if(chunk_cnt >= chunks){
+				goto here_exit;
+			}
+                        mfu_file_chunk* elem = (mfu_file_chunk*) MFU_MALLOC(sizeof(mfu_file_chunk));
+                        elem->name             = mfu_flist_file_get_name(list, idx);
+                        elem->offset           = off;
+			next_offset = (start+i*ssize)+((j+1)*interval);
+                        elem->file_size        = file_size;
+			elem->ost	       = ost_idx;
+                        elem->rank_of_owner    = rank;
+                        elem->index_of_owner   = idx;
+                        elem->next             = NULL;
+                        int task_ost = ost_idx;
+			chunk_cnt++;
+			if (file_size < chunk_size){
+				elem -> length = file_size; 
+			}
+			else if ((elem->offset + chunk_size) > file_size){
+				elem-> length = file_size - elem->offset;
+			}
+			else{
+				elem->length = chunk_size;
+			}
+//			printf("file_size: %d, offset: %d\n", file_size, elem->offset); 
+//			printf("length: %d\n", elem->length);
+                        size_t pack_size = strlen(elem->name) + 1;
+                        pack_size += 6 * 8;
+                        int dest_rank, num_binded_worker;
 
-            /* increase our count of procs to send to us */
-            recv_ranks++;
+                        if (OST_NUMBER >= worker_number){
+                                dest_rank = task_ost % worker_number;
+//				printf("task_ost: %d worker_num: %d dest_rank: %d\n", task_ost, worker_number, dest_rank);
+			}
+                        else{
+                                int remainder = task_ost < (worker_number % OST_NUMBER) ? 1 : 0;
+                                num_binded_worker = worker_number / OST_NUMBER + remainder;
+                                dest_rank = (num_tasks_per_ost[task_ost] % num_binded_worker) * OST_NUMBER + task_ost;
+                                num_tasks_per_ost[task_ost]++;
+                        }
+			if (dest_rank == rank){
+				
+				mfu_file_chunk* p = malloc(sizeof(mfu_file_chunk));
+				p->next = NULL;
+				p->name = strdup(elem->name);
+				p->offset = off;
+				p->file_size = file_size;
+				p->length = elem->length;
+				p->ost = ost_idx;
+				p->rank_of_owner = rank;
+				p->index_of_owner = idx;			
+				
+				if(head == NULL)
+					head = p;
+				if(tail != NULL)
+					tail->next = p;
+				tail= p;
+			}
+			else{
+                        /* append element to list */
+                        if (heads[dest_rank] == NULL) {
+                            heads[dest_rank] = elem;
+                        }
+                        if (tails[dest_rank] != NULL) {
+                            tails[dest_rank]->next = elem;
+                       	} 
+                        tails[dest_rank] = elem;
+                        counts[dest_rank]++;
+                        bytes[dest_rank] += pack_size;
+			}
+			} //end of inner for
+                    } //end of for 
+                   rc[0] = llapi_layout_comp_use(layout, 3);
+                    if (rc[0] == 0)
+                        continue;
+                    if (rc[0] < 0)
+                        printf("error: layout component iteration failed\n");
+                        break;
+                } //end of while
+                here_exit:
+			;		
         }
     }
-    
-    /* build the list of ranks to receive from */
-    int *recvranklist = (int *)MFU_MALLOC(sizeof(int) * recv_ranks);
-    int recv_count = 0;
-    for (i = 0; i < ranks; i++) {
-        if (recvlist[i]) {
-            recvranklist[recv_count] = i;
-            recv_count++;
-        }
-    }
- 
-    /* determine number of messages we'll have outstanding */
-    int msgs = send_ranks + recv_ranks;
-    MPI_Request* request = (MPI_Request*) MFU_MALLOC((size_t)msgs * sizeof(MPI_Request));
-    MPI_Status*  status  = (MPI_Status*)  MFU_MALLOC((size_t)msgs * sizeof(MPI_Status));
 
     /* create storage to hold byte counts that we'll send
-     * and receive, it would be best to use uint64_t here
-     * but for that, we'd need to create a datatypen,
-     * with an int, we should be careful we don't overflow */
-    int* send_counts = (int*) MFU_MALLOC((size_t)send_ranks * sizeof(int));
-    int* recv_counts = (int*) MFU_MALLOC((size_t)recv_ranks * sizeof(int));
-
+ *  *      * and receive, it would be best to use uint64_t here
+ *   *           * but for that, we'd need to create a datatypen,
+ *    *                * with an int, we should be careful we don't overflow */
+    int* send_counts = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
+    int* recv_counts = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
+    memset(send_counts, 0, ranks * sizeof(int));
+    memset(recv_counts, 0, ranks * sizeof(int));
     /* initialize our send counts */
-    for (i = 0; i < send_ranks; i++) {
+    for (int i = 0; i < ranks; i++) {
         /* TODO: check that we don't overflow here */
 
-        send_counts[i] = (int) bytes[i];
+        send_counts[i] = (i != rank && bytes[i] > 0) ? (int) bytes[i] : 0;
+//	printf("bytes %d send counts %d rank %d\n", bytes[i], send_counts[i], rank);
     }
+
+
+    /* exchange flags with ranks so everyone knows who they'll
+ *      * receive data from */
+    MPI_Alltoall(send_counts, 1, MPI_INT, recv_counts, 1, MPI_INT, MPI_COMM_WORLD);
+
+    int total_sends = 0, total_recvs = 0;
+    for (int i = 0; i < ranks; i++) {
+        if (send_counts[i] > 0) total_sends++;
+        if (recv_counts[i] > 0) total_recvs++;
+//	printf("rank %d, from/to rank %d, send_counts %d recv_counts %d \n", rank, i, send_counts[i], recv_counts[i]);
+    }
+
+//sy insert
+
+    int total_requests = total_sends + total_recvs;
+
+    MPI_Request* request = (MPI_Request*) MFU_MALLOC((size_t)total_requests * sizeof(MPI_Request));
+    MPI_Status*  status  = (MPI_Status*)  MFU_MALLOC((size_t)total_requests * sizeof(MPI_Status));
 
     /* post irecv to get sizes */
-    for (i = 0; i < recv_ranks; i++) {
-        int recv_rank = recvranklist[i];
-        MPI_Irecv(&recv_counts[i], 1, MPI_INT, recv_rank, 0, MPI_COMM_WORLD, &request[i]);
-    }
+/*
+int req_idx = 0;
 
-    /* post isend to send sizes */
-    for (i = 0; i < send_ranks; i++) {
-        int req_id = recv_ranks + i;
-        int send_rank = first_send_rank + i;
-        MPI_Isend(&send_counts[i], 1, MPI_INT, send_rank, 0, MPI_COMM_WORLD, &request[req_id]);
+for (int i = 0;i < ranks; i++) {
+    if (i!= rank) {
+        MPI_Irecv(&recv_counts[i], 1, MPI_INT, i, 0, MPI_COMM_WORLD, &request[req_idx++]);
+        MPI_Irecv(&recv_counts[i], 1, MPI_INT, i, 0, MPI_COMM_WORLD, &request[i]);
     }
+}
+
+for (int i = 0; i < ranks; i++) {
+    if (i != rank) { // Skip sending to itself
+        MPI_Isend(&send_counts[i], 1, MPI_INT, i, 0, MPI_COMM_WORLD, &request[req_idx++]);
+        MPI_Isend(&send_counts[i], 1, MPI_INT, i, 0, MPI_COMM_WORLD, &request[i]);
+	}
+}
+total_requests=req_idx;
+*/
 
     /* wait for sizes to come in */
-    MPI_Waitall(msgs, request, status);
+//    MPI_Waitall(total_requests, request, status);
 
     /* allocate memory and encode lists for sending */
-    for (i = 0; i < send_ranks; i++) {
+    for (int i = 0; i < ranks; i++) {
         /* allocate buffer for this destination */
+	if (i != rank && bytes[i]>0){
         size_t sendbuf_size = (size_t) bytes[i];
         sendbufs[i] = (char*) MFU_MALLOC(sendbuf_size);
 
@@ -311,18 +331,29 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size)
             mfu_pack_uint64(&sendptr, elem->offset);
             mfu_pack_uint64(&sendptr, elem->length);
             mfu_pack_uint64(&sendptr, elem->file_size);
+            mfu_pack_uint64(&sendptr, elem->ost);
             mfu_pack_uint64(&sendptr, elem->rank_of_owner);
             mfu_pack_uint64(&sendptr, elem->index_of_owner);
 
             /* go to next element */
             elem = elem->next;
         }
+	}
+    }
+    for(int i =0; i < ranks; i++){
+        int listsize = mfu_file_chunk_list_size(heads[i]);
+    //        printf("rank %d to %d list size %d\n", rank,i, listsize);
     }
 
+        int li = mfu_file_chunk_list_size(head);
+	
+//        printf("rank %d list size %d\n", rank, li);
     /* sum up total bytes that we'll receive */
     size_t recvbuf_size = 0;
-    for (i = 0; i < recv_ranks; i++) {
-        recvbuf_size += (size_t) recv_counts[i];
+    for (int i = 0; i < ranks; i++) {
+	if (i != rank){
+        	recvbuf_size += (size_t) recv_counts[i];
+	}
     }
 
     /* allocate memory for recvs */
@@ -330,45 +361,61 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size)
 
     /* post irecv for incoming data */
     char* recvptr = recvbuf;
-    for (i = 0; i < recv_ranks; i++) {
-        int recv_count = recv_counts[i];
-        int recv_rank = recvranklist[i];
-        MPI_Irecv(recvptr, recv_count, MPI_BYTE, recv_rank, 0, MPI_COMM_WORLD, &request[i]);
-        recvptr += recv_count;
-    }
 
-    /* post isend to send outgoing data */
-    for (i = 0; i < send_ranks; i++) {
-        int req_id = recv_ranks + i;
-        int send_rank = first_send_rank + i;
-        int send_count = send_counts[i];
-        MPI_Isend(sendbufs[i], send_count, MPI_BYTE, send_rank, 0, MPI_COMM_WORLD, &request[req_id]);
+//int req_idx = 0;
+//char** recv_buffers = (char**) MFU_MALLOC(ranks * sizeof(char*));
+/*for (int i = 0; i < ranks; i++) {
+    if (recv_counts[i] > 0) {
+        recv_buffers[i] = (char*) MFU_MALLOC(recv_counts[i]);
+    } else {
+        recv_buffers[i] = NULL; // No data expected from this rank
     }
+}
+
+
+*/
+int req_id = 0;
+for (int i = 0; i < ranks; i++) {
+    if (recv_counts[i] > 0) {
+        MPI_Irecv(recvptr, recv_counts[i], MPI_BYTE, i, 0, MPI_COMM_WORLD, &request[req_id++]);
+	recvptr += recv_counts[i];
+    }
+}
+
+for (int i = 0; i < ranks; i++) {
+    if (send_counts[i] > 0) {
+        MPI_Isend(sendbufs[i], send_counts[i], MPI_BYTE, i, 0, MPI_COMM_WORLD, &request[req_id++]);
+    }
+}
 
     /* waitall */
-    MPI_Waitall(msgs, request, status);
+    MPI_Waitall(total_requests, request, status);
 
-    mfu_file_chunk* head = NULL;
-    mfu_file_chunk* tail = NULL;
-
+//for(int i = 0; i < ranks; i++){
+//	if(recv_counts[i] >0){
+	
     /* iterate over all received data */
+//    const char* packptr = recv_buffers[i];
     const char* packptr = recvbuf;
-    char* recvbuf_end = recvbuf + recvbuf_size;
+//    const char* recvbuf_end = packptr + recv_counts[i];
+    char* recvbuf_end = recvbuf+recvbuf_size;
     while (packptr < recvbuf_end) {
         /* unpack file name */
         const char* name = packptr;
         packptr += strlen(name) + 1;
 
         /* unpack chunk offset, count, and file size */
-        uint64_t offset, length, file_size, rank_of_owner, index_of_owner;
+        uint64_t offset, length, ost, file_size, rank_of_owner, index_of_owner;
         mfu_unpack_uint64(&packptr, &offset);
         mfu_unpack_uint64(&packptr, &length);
         mfu_unpack_uint64(&packptr, &file_size);
+        mfu_unpack_uint64(&packptr, &ost);
         mfu_unpack_uint64(&packptr, &rank_of_owner);
         mfu_unpack_uint64(&packptr, &index_of_owner);
 
         /* allocate memory for new struct and set next pointer to null */
         mfu_file_chunk* p = malloc(sizeof(mfu_file_chunk));
+//        mfu_file_chunk* p = (mfu_file_chunk*) MFU_MALLOC(sizeof(mfu_file_chunk));
         p->next = NULL;
 
         /* set the fields of the struct */
@@ -376,6 +423,7 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size)
         p->offset = offset;
         p->length = length;
         p->file_size = file_size;
+        p->ost = ost;
         p->rank_of_owner = rank_of_owner;
         p->index_of_owner = index_of_owner;
 
@@ -392,17 +440,17 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size)
         /* have tail point at the current/last struct */
         tail = p;
     }
+//	}
+//}
 
-    /* free the send and receive flag arrays */
-    mfu_free(&sendlist);
-    mfu_free(&recvlist);
-
+	int listsize = mfu_file_chunk_list_size(head);
+	printf("rank %d list size %d\n", rank, listsize);
     /* free the linked lists, packed send buffers, and related arrays */
-    for (int i = 0; i < send_ranks; i++) {
+    for (int i = 0; i < ranks; i++) {
         mfu_free(&sendbufs[i]);
-
+ //   mfu_free(&recv_buffers[i]); // Free individual buffers
         /* free the element linked list for each rank.
-         * Do not free elem->name because it is needed by the mfu_flist entry. */
+ *          * Do not free elem->name because it is needed by the mfu_flist entry. */
         mfu_file_chunk* elem = heads[i];
         mfu_file_chunk* tmp;
         while (elem != NULL) {
@@ -417,8 +465,9 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size)
     mfu_free(&bytes);
     mfu_free(&sendbufs);
 
+    //mfu_free(&recv_buffers); // Free the array of pointers
     /* free the array for ranks recevied from */
-    mfu_free(&recvranklist);
+    //mfu_free(&recvranklist);
 
     /* free the request and status messages */
     mfu_free(&request);
@@ -433,6 +482,7 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size)
 
     return head;
 }
+
 
 /* free the linked list of structs (copy elem's) */
 void mfu_file_chunk_list_free(mfu_file_chunk** phead)
@@ -472,13 +522,15 @@ uint64_t mfu_file_chunk_list_size(const mfu_file_chunk* p)
 }
 
 /* given an flist, a file chunk list generated from that flist,
- * and an input array of flags with one element per chunk,
- * execute a LOR per item in the flist, and return the result
- * to the process owning that item in the flist */
+ *  * and an input array of flags with one element per chunk,
+ *   * execute a LOR per item in the flist, and return the result
+ *    * to the process owning that item in the flist */
 void mfu_file_chunk_list_lor(mfu_flist list, const mfu_file_chunk* head, const int* vals, int* results)
 {
     /* get the largest filename */
     uint64_t max_name = mfu_flist_file_max_name(list);
+
+	uint64_t file_list_size = mfu_flist_size(list);	
 
     /* if list is empty, we can't do much */
     if (max_name == 0) {
@@ -487,13 +539,13 @@ void mfu_file_chunk_list_lor(mfu_flist list, const mfu_file_chunk* head, const i
 
     /* get a count of how many items are the chunk list */
     uint64_t list_count = mfu_file_chunk_list_size(head);
-
+	printf("list_count: %d\n", list_count);
     /* keys are the filename, so only bytes that belong to 
-     * the same file will be compared via a flag in the segmented scan */
+ *      * the same file will be compared via a flag in the segmented scan */
     char* keys = (char*) MFU_MALLOC(list_count * max_name);
 
     /* ltr pointer for the output of the left-to-right-segmented scan */
-    int* ltr = (int*) MFU_MALLOC(list_count * sizeof(int));
+    int* ltr = (int*) MFU_MALLOC(file_list_size * sizeof(int));
 
     /* copy file names into comparison buffer for segmented scan */
     uint64_t i;
@@ -531,8 +583,8 @@ void mfu_file_chunk_list_lor(mfu_flist list, const mfu_file_chunk* head, const i
     int* senddisps  = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
 
     /* allocate space for send buffer, we'll send an index value and comparison
-     * flag, both as uint64_t */
-    size_t sendbytes = list_count * 2 * sizeof(uint64_t); 
+ *      * flag, both as uint64_t */
+    size_t sendbytes = file_list_size * 2 * sizeof(uint64_t); 
     uint64_t* sendbuf = (uint64_t*) MFU_MALLOC(sendbytes);
 
     /* initialize sendcounts array */
@@ -541,11 +593,12 @@ void mfu_file_chunk_list_lor(mfu_flist list, const mfu_file_chunk* head, const i
     }
 
     /* Iterate over the list of files. For each file a process needs to report on,
-     * we increment the counter correspoinding to the "owner" of the file. After
-     * going through all files, we then have a count of the number of files we 
-     * will report for each rank */
+ *      * we increment the counter correspoinding to the "owner" of the file. After
+ *           * going through all files, we then have a count of the number of files we 
+ *                * will report for each rank */
     int disp = 0;
     p = head;
+	int j = 0;
     for (i = 0; i < list_count; i++) {
         /* if we have the last byte of the file, we need to send scan result to owner */
         if (p->offset + p->length >= p->file_size) {
@@ -555,7 +608,7 @@ void mfu_file_chunk_list_lor(mfu_flist list, const mfu_file_chunk* head, const i
 
             /* copy index and flag value to send buffer */
             uint64_t file_index = p->index_of_owner;
-            uint64_t flag       = (uint64_t) ltr[i];
+            uint64_t flag       = (uint64_t) ltr[j++];
             sendbuf[disp    ]   = file_index;
             sendbuf[disp + 1]   = flag;
             

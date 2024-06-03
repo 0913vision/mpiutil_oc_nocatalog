@@ -642,6 +642,13 @@ daos_cleanup:
     MPI_Reduce(&md_count, &max_md_count, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
     MPI_Reduce(&md_count, &min_md_count, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
 
+    // llapi total time
+    double llapi_total_time = llapi_timing_info.total_time;
+    double llapi_sum_time, llapi_max_time, llapi_min_time;
+    MPI_Reduce(&llapi_total_time, &llapi_sum_time, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&llapi_total_time, &llapi_max_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&llapi_total_time, &llapi_min_time, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+
     if (rank == 0) {
         printf("check: exec time: %f seconds\n", endtime - starttime);
         
@@ -664,6 +671,10 @@ daos_cleanup:
         printf("check: Total metadata count: %f\n", sum_md_count);
         printf("check: Max metadata count: %f\n", max_md_count);
         printf("check: Min metadata count: %f\n", min_md_count);
+
+        printf("check: Avg llapi time: %f seconds\n", llapi_sum_time/size);
+        printf("check: Max llapi time: %f seconds\n", llapi_max_time);
+        printf("check: Min llapi time: %f seconds\n", llapi_min_time);
     }
 
     mfu_finalize();

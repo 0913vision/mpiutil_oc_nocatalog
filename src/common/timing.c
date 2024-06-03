@@ -4,6 +4,7 @@
 timing_info_t timing_info = {0.0, 0};
 timing_info_t pread_timing_info = {0.0, 0};
 timing_info_t md_timing_info = {0.0, 0};
+timing_info_t llapi_timing_info = {0.0, 0};
 
 void record_timing(double start, double end) {
     double duration = end - start;
@@ -21,4 +22,10 @@ void md_record_timing(double start, double end) {
     double duration = end - start;
     md_timing_info.total_time += duration;
     md_timing_info.count++;
+}
+
+void llapi_record_timing(double start, double end, timing_info_t *timing_info) {
+    double duration = end - start;
+    timing_info->total_time += duration;
+    timing_info->count++;
 }
