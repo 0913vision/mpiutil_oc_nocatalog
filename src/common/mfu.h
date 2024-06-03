@@ -20,6 +20,7 @@ extern "C" {
 #define _XOPEN_SOURCE 500
 #endif
 #include <limits.h>
+#include <lustre/lustreapi.h>
 
 #include "mfu_util.h"
 #include "mfu_path.h"
@@ -31,6 +32,9 @@ extern "C" {
 #include "mfu_progress.h"
 #include "mfu_bz2.h"
 
+#define OST_NUMBER 24
+extern uint64_t num_tasks_per_ost[OST_NUMBER]; 
+ 
 #endif /* MFU_H */
 
 /* enable C++ codes to include this header directly */
