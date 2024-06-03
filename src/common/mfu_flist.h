@@ -60,12 +60,12 @@ extern "C" {
 #define DCOPY_DEF_PERMS_DIR  (S_IRWXU)
 
 /* default chunk size to split files into work units */
-#define MFU_CHUNK_SIZE_STR "4MB"
-#define MFU_CHUNK_SIZE (4*1024*1024)
+#define MFU_CHUNK_SIZE_STR "1MB"
+#define MFU_CHUNK_SIZE (1*1024*1024)
 
 /* default buffer size to read/write data to file system */
-#define MFU_BUFFER_SIZE_STR "4MB"
-#define MFU_BUFFER_SIZE (4*1024*1024)
+#define MFU_BUFFER_SIZE_STR "1MB"
+#define MFU_BUFFER_SIZE (1*1024*1024)
 
 /*
  * FIXME: Is this description correct?
@@ -89,6 +89,17 @@ extern "C" {
 /****************************************
  * Define types
  ***************************************/
+
+
+typedef struct obj_task {
+    int ost_idx;
+    char path[4096];
+    uint64_t start;
+    uint64_t end;
+    uint64_t stripe_size;
+} obj_task;
+
+
 
 /* TODO: these types may be encoded in files,
  * so changing their values can break backwards compatibility
@@ -588,6 +599,7 @@ typedef struct mfu_file_chunk_struct {
   uint64_t offset;         /* starting byte offset in file */
   uint64_t length;         /* length of bytes process is responsible for */
   uint64_t file_size;      /* full size of target file */
+  uint64_t ost;   //sy: add
   uint64_t rank_of_owner;  /* MPI rank acting as the owner of this file */
   uint64_t index_of_owner; /* index value of file in original flist on its owner rank */
   struct mfu_file_chunk_struct* next; /* pointer to next chunk element */

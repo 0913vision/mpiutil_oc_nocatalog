@@ -2100,6 +2100,8 @@ static int mfu_copy_file(
     return ret;
 }
 
+
+
 /* slices files in list at boundaries of chunk size, evenly distributes
  * chunks, and copies data from source to destination file,
  * returns 0 on success and -1 on error */
@@ -2159,9 +2161,9 @@ static int mfu_copy_files(
      * this evenly spreads the file sections across processes */
     mfu_file_chunk* head = mfu_file_chunk_list_alloc(list, copy_opts->chunk_size);
 
+
     /* get a count of how many items are the chunk list */
     uint64_t list_count = mfu_file_chunk_list_size(head);
-
     /* allocate a flag for each element in chunk list,
      * will store 0 to mean copy of this chunk succeeded and 1 otherwise
      * to be used as input to logical OR to determine state of entire file */
@@ -2188,12 +2190,14 @@ static int mfu_copy_files(
 
         /* copy portion of file corresponding to this chunk,
          * and record whether copy operation succeeded */
-        int copy_rc = mfu_copy_file(p->name, dest, (uint64_t)p->offset,
+        int copy_rc = mfu_copy_file(p->name, dest, (uint64_t)p->offset,  // sy: where actual copy occurs
                 (uint64_t)p->length, (uint64_t)p->file_size, copy_opts,
                 mfu_src_file, mfu_dst_file);
+	
         if (copy_rc < 0) {
             /* error copying file */
             vals[i] = 1;
+		printf ("error copying file\n");
         }
 
         /* free the dest name */
@@ -2212,32 +2216,42 @@ static int mfu_copy_files(
     MPI_Barrier(MPI_COMM_WORLD);
 
     /* allocate a flag for each item in our file list */
-    int* results = (int*) MFU_MALLOC(size * sizeof(int));
+//    int* results = (int*) MFU_MALLOC(size * sizeof(int));
+    int* results = (int*) MFU_MALLOC(list_count * sizeof(int));
 
     /* intialize values, since not every item is represented
      * in chunk list */
-    for (i = 0; i < size; i++) {
+//    for (i = 0; i < size; i++) {
+    for (i = 0; i < list_count; i++) {
         results[i] = 0;
     }
 
     /* determnie which files were copied correctly */
-    mfu_file_chunk_list_lor(list, head, vals, results);
+//    mfu_file_chunk_list_lor(list, head, vals, results);
+	
 
     /* delete any destination file that failed to copy */
-    for (i = 0; i < size; i++) {
+
+//    for (i = 0; i < size; i++) {
+/*
+    for (i = 0; i < list_count; i++) {
         if (results[i] != 0) {
+		printf("found!\n");
+*/
             /* found a file that had an error during copy,
              * compute destination name and delete it */
+/*
             const char* name = mfu_flist_file_get_name(list, i);
             const char* dest = mfu_param_path_copy_dest(name, numpaths,
                 paths, destpath, copy_opts, mfu_src_file, mfu_dst_file);
             if (dest != NULL) {
+*/
                 /* sanity check to ensure we don't * delete the source file */
-                if (strcmp(dest, name) != 0) {
+/*                if (strcmp(dest, name) != 0) {
                     MFU_LOG(MFU_LOG_ERR, "Failed to copy `%s' to `%s'", name, dest);
                     rc = -1;
 #if 0
-                    /* delete destination file */
+                   // delete destination file 
                     int unlink_rc = mfu_file_unlink(dest, mfu_dst_file);
                     if (unlink_rc != 0) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to unlink `%s' (errno=%d %s)",
@@ -2246,16 +2260,17 @@ static int mfu_copy_files(
                     }
 #endif
                 }
-
+*/
                 /* free destination name */
-                mfu_free(&dest);
+/*                mfu_free(&dest);
             }
         }
     }
-
+*/
     /* free the list of success/fail for each chunk */
-    mfu_free(&vals);
 
+
+//   mfu_free(&vals);
     /* free copy flags */
     mfu_free(&results);
 
@@ -2663,7 +2678,6 @@ int mfu_flist_copy(
         mfu_sync_all("Syncing directory updates to disk.");
     } else {
         /* user does not want to batch files, so copy the whole list */
-
         /* create files and links */
         tmp_rc = mfu_create_files(levels, minlevel, lists, numpaths,
                 paths, destpath, copy_opts, mfu_src_file, mfu_dst_file);
