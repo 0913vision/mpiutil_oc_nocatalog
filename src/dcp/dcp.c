@@ -603,10 +603,9 @@ daos_cleanup:
     }
 
     double endtime = MPI_Wtime();
-    int size, rank;
+    int size;
 
     MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     // Total time
     double total_time = timing_info.total_time;
